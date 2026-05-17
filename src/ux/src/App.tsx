@@ -1,8 +1,10 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import "./App.css";
-import type { HexColor, PixelGrid } from "./types/canvas";
+import type { CanvasSnapshot, HexColor, PixelGrid } from "./types/canvas";
 import { PixelCanvas } from "./components/PixelCanvas";
 import { ColorPicker } from "./components/ColorPicker";
+import { fetchCanvasSnapshot } from "./api/CanvasApi";
+import { useCanvasSocket } from "./hooks/useCanvasSocket";
 
 const CANVAS_WIDTH = 128;
 const CANVAS_HEIGHT = 128;
@@ -12,25 +14,62 @@ const MAX_CELL_SIZE = 14;
 const DEFAULT_COLOR = "#ffffff";
 const INITIAL_SELECTED_COLOR = "#5253a0";
 
-function createInitialPixels(): PixelGrid {
-  return Array.from({ length: CANVAS_HEIGHT }, () =>
-    Array.from({ length: CANVAS_WIDTH }, () => DEFAULT_COLOR),
-  );
-}
-
 function App() {
-  const [pixels, setPixels] = useState<PixelGrid>(() => createInitialPixels());
+  const [pixels, setPixels] = useState<PixelGrid>([]);
   const [cellSize, setCellSize] = useState(DEFAULT_CELL_SIZE);
   const [selectedColor, setSelectedColor] = useState<HexColor>(
     INITIAL_SELECTED_COLOR,
   );
 
+  const {connectionStatus, sendPixelUpdate} = useCanvasSocket({
+    onPixelUpdated: (x, y, color) => {
+      setPixels((currentPixels) => {
+        const nextPixels = currentPixels.map((row) => [...row]);
+
+        if (!nextPixels[y] || nextPixels[y][x] == undefined) {
+          return currentPixels;
+        }
+
+        nextPixels[y][x] = color;
+        return nextPixels;
+      });
+    },
+    onError: (message) => {
+      console.error("WebSocket error message:", message);
+    },
+  });
+
+  // canvas ground truth from the background
+  const [canvasSnapshot, setCanvasSnapshot] = useState<CanvasSnapshot | null>(
+    null,
+  );
+  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  // useEffects
+  useEffect(() => {
+    async function loadCanvas() {
+      try {
+        setIsLoading(true);
+        setLoadError(null);
+
+        const snapshot = await fetchCanvasSnapshot();
+
+        setCanvasSnapshot(snapshot);
+        setPixels(snapshot.pixels);
+      } catch (error) {
+        setLoadError(
+          error instanceof Error ? error.message : "Failed to load canvas",
+        );
+      } finally {
+        setIsLoading(false);
+      }
+    }
+    loadCanvas();
+  }, []);
+
   function handlePixelClick(x: number, y: number) {
-    setPixels((currentPixels) => {
-      const nextPixels = currentPixels.map((row) => [...row]);
-      nextPixels[y][x] = selectedColor;
-      return nextPixels;
-    });
+    sendPixelUpdate(x, y, selectedColor);
   }
 
   function handleCanvasZoom(direction: "in" | "out") {
@@ -43,6 +82,26 @@ function App() {
     });
   }
 
+  if (isLoading) {
+    return (
+      <main className="app">
+        <section className="workspace">
+          <p>Loading canvas...</p>
+        </section>
+      </main>
+    );
+  }
+
+  if (loadError || !canvasSnapshot) {
+    return (
+      <main className="app">
+        <section className="workspace">
+          <p>Failed to load canvas: {loadError}</p>
+        </section>
+      </main>
+    );
+  }
+
   return (
     <main className="app">
       <header className="app-banner">
@@ -53,7 +112,9 @@ function App() {
           </div>
 
           <h1>Shared Pixel Canvas</h1>
-          <p>Draw pixels locally. Real-time sync comes next.</p>
+          <p>
+            Backend canvas loaded. WebSocket: {connectionStatus}.
+          </p>
         </div>
 
         <ColorPicker color={selectedColor} onChange={setSelectedColor} />
