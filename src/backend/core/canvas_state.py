@@ -16,6 +16,7 @@ class CanvasState:
         self._pixels: list[list[HexColor]] = [
                 [default_color for _ in range(width)] for _ in range(height)
             ]
+        self._pixels[0][1] = "#5fdf22"
         
     def get_snapshot(self) -> CanvasSnapshot:
         return CanvasSnapshot(

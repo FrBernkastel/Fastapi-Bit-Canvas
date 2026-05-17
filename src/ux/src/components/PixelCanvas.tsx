@@ -31,12 +31,12 @@ export function PixelCanvas({
   const lastPointRef = useRef<CanvasPoint | null>(null);
   const lastPaintedCellRef = useRef<Cell | null>(null);
 
-const pendingZoomAnchorRef = useRef<{
-  logicalX: number;
-  logicalY: number;
-  clientX: number;
-  clientY: number;
-} | null>(null);
+  const pendingZoomAnchorRef = useRef<{
+    logicalX: number;
+    logicalY: number;
+    clientX: number;
+    clientY: number;
+  } | null>(null);
 
   const height = pixels.length;
   const width = pixels[0]?.length ?? 0;
@@ -186,59 +186,59 @@ const pendingZoomAnchorRef = useRef<{
     }
   }
 
-useEffect(() => {
-  const canvas = canvasRef.current;
-  if (!canvas) return;
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
 
-  const handleWheel = (event: WheelEvent) => {
-    event.preventDefault();
+    const handleWheel = (event: WheelEvent) => {
+      event.preventDefault();
+
+      const rect = canvas.getBoundingClientRect();
+
+      const canvasX = event.clientX - rect.left;
+      const canvasY = event.clientY - rect.top;
+
+      pendingZoomAnchorRef.current = {
+        logicalX: canvasX / cellSize,
+        logicalY: canvasY / cellSize,
+        clientX: event.clientX,
+        clientY: event.clientY,
+      };
+
+      if (event.deltaY < 0) {
+        onZoom("in");
+      } else {
+        onZoom("out");
+      }
+    };
+
+    canvas.addEventListener("wheel", handleWheel, { passive: false });
+
+    return () => {
+      canvas.removeEventListener("wheel", handleWheel);
+    };
+  }, [cellSize, onZoom]);
+
+  useLayoutEffect(() => {
+    const anchor = pendingZoomAnchorRef.current;
+    const canvas = canvasRef.current;
+
+    if (!anchor || !canvas) {
+      return;
+    }
 
     const rect = canvas.getBoundingClientRect();
 
-    const canvasX = event.clientX - rect.left;
-    const canvasY = event.clientY - rect.top;
+    const nextClientX = rect.left + anchor.logicalX * cellSize;
+    const nextClientY = rect.top + anchor.logicalY * cellSize;
 
-    pendingZoomAnchorRef.current = {
-      logicalX: canvasX / cellSize,
-      logicalY: canvasY / cellSize,
-      clientX: event.clientX,
-      clientY: event.clientY,
-    };
+    const deltaX = nextClientX - anchor.clientX;
+    const deltaY = nextClientY - anchor.clientY;
 
-    if (event.deltaY < 0) {
-      onZoom("in");
-    } else {
-      onZoom("out");
-    }
-  };
+    window.scrollBy(deltaX, deltaY);
 
-  canvas.addEventListener("wheel", handleWheel, { passive: false });
-
-  return () => {
-    canvas.removeEventListener("wheel", handleWheel);
-  };
-}, [cellSize, onZoom]);
-
-useLayoutEffect(() => {
-  const anchor = pendingZoomAnchorRef.current;
-  const canvas = canvasRef.current;
-
-  if (!anchor || !canvas) {
-    return;
-  }
-
-  const rect = canvas.getBoundingClientRect();
-
-  const nextClientX = rect.left + anchor.logicalX * cellSize;
-  const nextClientY = rect.top + anchor.logicalY * cellSize;
-
-  const deltaX = nextClientX - anchor.clientX;
-  const deltaY = nextClientY - anchor.clientY;
-
-  window.scrollBy(deltaX, deltaY);
-
-  pendingZoomAnchorRef.current = null;
-}, [cellSize]);
+    pendingZoomAnchorRef.current = null;
+  }, [cellSize]);
 
   return (
     <canvas
