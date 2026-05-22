@@ -1,98 +1,131 @@
 import { useEffect, useRef, useState } from "react";
-import type { HexColor, PixelUpdateMessage, ServerCanvasMessage } from "../types/canvas";
-
+import type {
+  HexColor,
+  PixelBatchUpdateMessage,
+  PixelChange,
+  PixelUpdateMessage,
+  ServerCanvasMessage,
+} from "../types/canvas";
 
 const WS_URL = "ws://127.0.0.1:8000/ws/canvas";
 
 type ConnectionStatus = "connecting" | "connected" | "disconnected" | "error";
 
 interface UseCanvasSocketOptions {
-    onPixelUpdated: (x: number, y: number, color: HexColor) => void;
-    onError?: (message: string) => void;
+  onPixelUpdated: (x: number, y: number, color: HexColor) => void;
+  onPixelBatchUpdated: (pixels: PixelChange[]) => void;
+  onError?: (message: string) => void;
 }
 
 export function useCanvasSocket({
-    onPixelUpdated, 
-    onError,
+  onPixelUpdated,
+  onPixelBatchUpdated,
+  onError,
 }: UseCanvasSocketOptions) {
-    const websocketRef = useRef<WebSocket | null>(null);
-    const onPixelUpdatedRef = useRef(onPixelUpdated);
-    const onErrorRef = useRef(onError);
+  const websocketRef = useRef<WebSocket | null>(null);
+  const onPixelUpdatedRef = useRef(onPixelUpdated);
+  const onPixelBatchUpdatedRef = useRef(onPixelBatchUpdated);
+  const onErrorRef = useRef(onError);
 
-    const [connectionStatus, setConnectionStatus] =
-        useState<ConnectionStatus>("connecting");
+  const [connectionStatus, setConnectionStatus] =
+    useState<ConnectionStatus>("connecting");
 
-    useEffect(() => {
-        onPixelUpdatedRef.current = onPixelUpdated;
-        onErrorRef.current = onError;
-    }, [onPixelUpdated, onError])
+  useEffect(() => {
+    onPixelUpdatedRef.current = onPixelUpdated;
+    onPixelBatchUpdatedRef.current = onPixelBatchUpdated;
+    onErrorRef.current = onError;
+  }, [onPixelUpdated, onPixelBatchUpdated, onError]);
 
-    useEffect(() => {
-        const websocket = new WebSocket(WS_URL);
-        websocketRef.current = websocket;
+  useEffect(() => {
+    const websocket = new WebSocket(WS_URL);
+    websocketRef.current = websocket;
 
-        setConnectionStatus("connecting");
+    setConnectionStatus("connecting");
 
-        websocket.onopen = () => {
-            setConnectionStatus("connected");
+    websocket.onopen = () => {
+      setConnectionStatus("connected");
+    };
+
+    websocket.onmessage = (event) => {
+      try {
+        const message = JSON.parse(event.data) as ServerCanvasMessage;
+
+        if (message.type === "pixel_updated") {
+          onPixelUpdatedRef.current(message.x, message.y, message.color);
+          return;
         }
 
-        websocket.onmessage = (event) => {
-            try {
-                const message = JSON.parse(event.data) as ServerCanvasMessage;
-
-                if(message.type === "pixel_updated") {
-                    onPixelUpdatedRef.current(message.x, message.y, message.color);
-                    return;
-                }
-
-                if(message.type == "error") {
-                    onErrorRef.current?.(message.message);
-                    return;
-                }
-            }
-            catch(error) {
-                onErrorRef.current?.(
-                    error instanceof Error
-                    ? error.message
-                    : "Failed to parse WebSocket message",
-                );
-            }
+        if (message.type == "pixel_batch_updated") {
+          onPixelBatchUpdatedRef.current(message.pixels);
+          return;
         }
 
-        websocket.onerror = () => {
-            setConnectionStatus("error");
+        if (message.type == "error") {
+          onErrorRef.current?.(message.message);
+          return;
         }
+      } catch (error) {
+        onErrorRef.current?.(
+          error instanceof Error
+            ? error.message
+            : "Failed to parse WebSocket message",
+        );
+      }
+    };
 
-        websocket.onclose = () => {
-            setConnectionStatus("disconnected");
-        }
+    websocket.onerror = () => {
+      setConnectionStatus("error");
+    };
 
-        return () => {
-            websocket.close();
-            websocketRef.current = null;
-        };
-    }, [])
+    websocket.onclose = () => {
+      setConnectionStatus("disconnected");
+    };
 
-    function sendPixelUpdate(x: number, y: number, color: HexColor) {
-        const websocket = websocketRef.current;
+    return () => {
+      websocket.close();
+      websocketRef.current = null;
+    };
+  }, []);
 
-        if(!websocket || websocket.readyState != websocket.OPEN) {
-            return;
-        }
+  function sendPixelUpdate(x: number, y: number, color: HexColor) {
+    const websocket = websocketRef.current;
 
-        const message: PixelUpdateMessage = {
-            type: "pixel_update",
-            x: x,
-            y: y,
-            color: color
-        };
-
-        websocket.send(JSON.stringify(message));
+    if (!websocket || websocket.readyState !== WebSocket.OPEN) {
+      return;
     }
 
-    return {
-        connectionStatus,
-        sendPixelUpdate,
+    const message: PixelUpdateMessage = {
+      type: "pixel_update",
+      x: x,
+      y: y,
+      color: color,
     };
+
+    websocket.send(JSON.stringify(message));
+  }
+
+  function sendPixelBatchUpdate(pixels: PixelChange[]) {
+    const websocket = websocketRef.current;
+
+    if (!websocket || websocket.readyState !== WebSocket.OPEN) {
+      return;
+    }
+
+    if (pixels.length === 0) {
+      return;
+    }
+
+    const message: PixelBatchUpdateMessage = {
+      type: "pixel_batch_update",
+      pixels: pixels,
+    };
+
+    websocket.send(JSON.stringify(message));
+  }
+
+  return {
+    connectionStatus,
+    sendPixelUpdate,
+    sendPixelBatchUpdate,
+  };
 }

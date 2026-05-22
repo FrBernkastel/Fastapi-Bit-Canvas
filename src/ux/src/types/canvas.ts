@@ -9,6 +9,12 @@ export interface CanvasSnapshot {
   pixels: PixelGrid;
 }
 
+export interface PixelChange {
+  x: number;
+  y: number;
+  color: HexColor;
+}
+
 export interface PixelUpdateMessage {
   type: "pixel_update";
   x: number;
@@ -23,9 +29,19 @@ export interface PixelUpdatedMessage {
   color: HexColor;
 }
 
+export interface PixelBatchUpdateMessage {
+  type: "pixel_batch_update";
+  pixels: PixelChange[];
+}
+
+export interface PixelBatchUpdatedMessage {
+  type: "pixel_batch_updated";
+  pixels: PixelChange[];
+}
+
 export interface ErrorMessage {
   type: "error";
   message: string;
 }
 
-export type ServerCanvasMessage = PixelUpdatedMessage | ErrorMessage;
+export type ServerCanvasMessage = PixelUpdatedMessage | PixelBatchUpdatedMessage | ErrorMessage;

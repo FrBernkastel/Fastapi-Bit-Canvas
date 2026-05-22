@@ -5,7 +5,7 @@ import { getCellFromCanvasPoint, isInsideCanvas } from "../utils/canvasMath";
 interface PixelCanvasProps {
   pixels: PixelGrid;
   cellSize: number;
-  onPixelClick: (x: number, y: number) => void;
+  onPixelsPaint: (cells: Cell[]) => void;
   onZoom: (direction: "in" | "out") => void;
 }
 
@@ -22,7 +22,7 @@ interface Cell {
 export function PixelCanvas({
   pixels,
   cellSize,
-  onPixelClick,
+  onPixelsPaint,
   onZoom,
 }: PixelCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -91,7 +91,10 @@ export function PixelCanvas({
       lastPointRef.current = point;
       lastPaintedCellRef.current = null;
 
-      paintAtPoint(point);
+      const cell = getPaintCellAtPoint(point);
+      if (cell) {
+        onPixelsPaint([cell]);
+      }
     }
 
     function handlePointerMove(event: PointerEvent) {
@@ -102,7 +105,10 @@ export function PixelCanvas({
 
       if (!lastPoint) {
         lastPointRef.current = currentPoint;
-        paintAtPoint(currentPoint);
+        const cell = getPaintCellAtPoint(currentPoint);
+        if (cell) {
+          onPixelsPaint([cell]);
+        }
         return;
       }
 
@@ -125,7 +131,7 @@ export function PixelCanvas({
       window.removeEventListener("pointermove", handlePointerMove);
       window.removeEventListener("pointerup", handlePointerUp);
     };
-  }, [cellSize, width, height, onPixelClick]);
+  }, [cellSize, width, height, onPixelsPaint]);
 
   function getGridLinePosition(index: number, count: number, cellSize: number) {
     if (index === count) {
@@ -149,7 +155,7 @@ export function PixelCanvas({
     };
   }
 
-  function paintAtPoint(point: CanvasPoint) {
+  function getPaintCellAtPoint(point: CanvasPoint): Cell | null {
     const { x, y } = getCellFromCanvasPoint(
       point.canvasX,
       point.canvasY,
@@ -157,17 +163,17 @@ export function PixelCanvas({
     );
 
     if (!isInsideCanvas(x, y, width, height)) {
-      return;
+      return null;
     }
 
     const lastPaintedCell = lastPaintedCellRef.current;
 
     if (lastPaintedCell && lastPaintedCell.x === x && lastPaintedCell.y === y) {
-      return;
+      return null;
     }
 
     lastPaintedCellRef.current = { x, y };
-    onPixelClick(x, y);
+    return { x, y };
   }
 
   function paintBetweenPoints(from: CanvasPoint, to: CanvasPoint) {
@@ -178,11 +184,21 @@ export function PixelCanvas({
     const stepSize = Math.max(1, cellSize / 2);
     const steps = Math.max(1, Math.ceil(distance / stepSize));
 
+    const cells: Cell[] = [];
+
     for (let i = 1; i <= steps; i++) {
       const canvasX = from.canvasX + (dx * i) / steps;
       const canvasY = from.canvasY + (dy * i) / steps;
 
-      paintAtPoint({ canvasX, canvasY });
+      const cell = getPaintCellAtPoint({ canvasX, canvasY });
+
+      if (cell) {
+        cells.push(cell);
+      }
+    }
+
+    if (cells.length > 0) {
+      onPixelsPaint(cells);
     }
   }
 

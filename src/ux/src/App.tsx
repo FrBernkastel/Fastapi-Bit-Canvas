@@ -1,6 +1,11 @@
 import { useEffect, useState } from "react";
 import "./App.css";
-import type { CanvasSnapshot, HexColor, PixelGrid } from "./types/canvas";
+import type {
+  CanvasSnapshot,
+  HexColor,
+  PixelChange,
+  PixelGrid,
+} from "./types/canvas";
 import { PixelCanvas } from "./components/PixelCanvas";
 import { ColorPicker } from "./components/ColorPicker";
 import { fetchCanvasSnapshot } from "./api/CanvasApi";
@@ -21,29 +26,41 @@ function App() {
     INITIAL_SELECTED_COLOR,
   );
 
-  const {connectionStatus, sendPixelUpdate} = useCanvasSocket({
-    onPixelUpdated: (x, y, color) => {
-      setPixels((currentPixels) => {
-        const nextPixels = currentPixels.map((row) => [...row]);
+  function applyPixelChanges(pixelChanges: PixelChange[]) {
+    setPixels((currentPixels) => {
+      const nextPixels = currentPixels.map((row) => [...row]);
 
-        if (!nextPixels[y] || nextPixels[y][x] == undefined) {
-          return currentPixels;
+      for (const pixel of pixelChanges) {
+        if (
+          !nextPixels[pixel.y] ||
+          nextPixels[pixel.y][pixel.x] === undefined
+        ) {
+          continue;
         }
 
-        nextPixels[y][x] = color;
-        return nextPixels;
-      });
-    },
-    onError: (message) => {
-      console.error("WebSocket error message:", message);
-    },
-  });
+        nextPixels[pixel.y][pixel.x] = pixel.color;
+      }
+
+      return nextPixels;
+    });
+  }
+
+  const { connectionStatus, sendPixelUpdate, sendPixelBatchUpdate } =
+    useCanvasSocket({
+      onPixelUpdated: (x, y, color) => {
+        applyPixelChanges([{ x, y, color }]);
+      },
+      onPixelBatchUpdated: (pixelChanges) => applyPixelChanges(pixelChanges),
+      onError: (message) => {
+        console.error("WebSocket error message:", message);
+      },
+    });
 
   // canvas ground truth from the background
   const [canvasSnapshot, setCanvasSnapshot] = useState<CanvasSnapshot | null>(
     null,
   );
-  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
   // useEffects
@@ -68,8 +85,14 @@ function App() {
     loadCanvas();
   }, []);
 
-  function handlePixelClick(x: number, y: number) {
-    sendPixelUpdate(x, y, selectedColor);
+  function handlePixelsPaint(cells: { x: number; y: number }[]) {
+    sendPixelBatchUpdate(
+      cells.map((cell) => ({
+        x: cell.x,
+        y: cell.y,
+        color: selectedColor,
+      })),
+    );
   }
 
   function handleCanvasZoom(direction: "in" | "out") {
@@ -112,9 +135,7 @@ function App() {
           </div>
 
           <h1>Shared Pixel Canvas</h1>
-          <p>
-            Backend canvas loaded. WebSocket: {connectionStatus}.
-          </p>
+          <p>Backend canvas loaded. WebSocket: {connectionStatus}.</p>
         </div>
 
         <ColorPicker color={selectedColor} onChange={setSelectedColor} />
@@ -126,7 +147,7 @@ function App() {
             <PixelCanvas
               pixels={pixels}
               cellSize={cellSize}
-              onPixelClick={handlePixelClick}
+              onPixelsPaint={handlePixelsPaint}
               onZoom={handleCanvasZoom}
             />
           </div>

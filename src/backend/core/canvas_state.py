@@ -1,5 +1,5 @@
 import re
-from backend.models.canvas import CanvasSnapshot, HexColor
+from backend.models.canvas import CanvasSnapshot, HexColor, PixelChange
 
 HEX_COLOR_PATTERN = re.compile(r"^#[0-9a-fA-F]{6}$")
 
@@ -31,6 +31,15 @@ class CanvasState:
         self._validate_color(color)
         
         self._pixels[y][x] = color
+        
+    def set_pixels(self, pixels: list[PixelChange]) -> None:
+        # Separate the validation and set, to make sure either all fail or all success
+        for pixel_change in pixels:
+            self._validate_coordinate(pixel_change.x, pixel_change.y)
+            self._validate_color(pixel_change.color)
+            
+        for pixel_change in pixels:
+            self._pixels[pixel_change.y][pixel_change.x] = pixel_change.color
         
     def _copy_pixels(self) -> list[list[HexColor]]:
         return [row.copy() for row in self._pixels]
